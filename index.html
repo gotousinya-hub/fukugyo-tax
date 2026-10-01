@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>副業 確定申告シミュレーター(青色申告・損益通算対応)</title>
+<meta name="description" content="会社員の副業(事業所得・青色申告)の確定申告をブラウザだけで試算。売上・経費・源泉徴収票を入れると、損益通算後の還付額、青色申告決算書と申告書第一表への転記額まで出ます。">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body { background: #f4f7fb; }
+  .tool-header { background: var(--white); border-bottom: 1px solid var(--border); }
+  .tool-header .inner { max-width: 1040px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .tool-header .title { font-weight: 700; font-size: 17px; color: var(--primary-dark); }
+  .tool-header .title small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); }
+  .tool-header .back { font-size: 13px; }
+
+  .summary-bar { position: sticky; top: 0; z-index: 50; background: var(--primary-dark); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+  .summary-bar .inner { max-width: 1040px; margin: 0 auto; padding: 10px 20px; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+  .summary-bar .item small { display: block; font-size: 11px; opacity: .8; }
+  .summary-bar .item strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .summary-bar .item strong.refund { color: #9ff0bf; }
+  .summary-bar .item strong.pay { color: #ffd1a6; }
+
+  .tool-wrap { max-width: 1040px; margin: 0 auto; padding: 24px 20px 80px; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; margin-bottom: 22px; box-shadow: var(--shadow-sm); }
+  .card h2 { display: flex; align-items: center; gap: 10px; font-size: 19px; margin: 0 0 6px; color: var(--primary-dark); }
+  .card h2 .step { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 14px; flex-shrink: 0; }
+  .card .lead { margin: 0 0 16px; font-size: 14px; color: var(--muted); }
+  .card h3 { font-size: 15px; margin: 20px 0 10px; padding-left: 10px; border-left: 4px solid var(--primary-light); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 20px; }
+  .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+  .field input[type=text], .field select {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 16px; font-family: var(--font); background: #fff; color: var(--text);
+  }
+  .field input.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(30,91,168,.12); }
+  .field input[readonly] { background: #f3f5f8; color: var(--muted); }
+  .unit { font-size: 12px; color: var(--muted); margin-left: 4px; }
+  .check { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; margin: 8px 0; }
+  .check input { margin-top: 4px; }
+  .radio-group { display: grid; gap: 8px; }
+  .radio-card { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; font-size: 14px; }
+  .radio-card:has(input:checked) { border-color: var(--primary); background: var(--accent-bg); }
+  .radio-card input { margin-top: 3px; }
+  .radio-card small { display: block; color: var(--muted); font-size: 12px; }
+
+  .callout { border-radius: 8px; padding: 12px 14px; font-size: 14px; margin: 12px 0; line-height: 1.65; }
+  .callout.info { background: #eef5ff; border-left: 4px solid var(--primary); }
+  .callout.ok { background: #ecf8f1; border-left: 4px solid var(--success); }
+  .callout.warn { background: #fff7e6; border-left: 4px solid #e69a00; }
+  .callout.danger { background: #fdeeee; border-left: 4px solid #c9302c; }
+  .callout ul { list-style: disc; padding-left: 20px; margin: 6px 0 0; }
+  .callout li { margin: 3px 0; }
+
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.tbl th, table.tbl td { border-bottom: 1px solid var(--border); padding: 8px 8px; text-align: left; vertical-align: middle; }
+  table.tbl th { background: #f6f8fb; font-weight: 600; font-size: 13px; white-space: nowrap; }
+  table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.tbl tr.total td { font-weight: 700; background: #fafbfd; }
+  table.tbl tr.sub td { color: var(--muted); }
+  table.tbl tr.hl td { background: #eef5ff; font-weight: 700; }
+  .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  .month-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+  .month-grid .field label { font-size: 12px; text-align: center; }
+  .month-grid input { padding: 7px 8px; font-size: 15px; }
+
+  #exp-table input[type=text], #exp-table select { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: var(--font); }
+  #exp-table input.num { text-align: right; }
+  #exp-table td { padding: 5px 4px; }
+  #exp-table .c-date { width: 118px; }
+  #exp-table .c-cat { width: 150px; }
+  #exp-table .c-amt { width: 120px; }
+  #exp-table .c-ratio { width: 70px; }
+  #exp-table .c-after { width: 100px; }
+  #exp-table .c-del { width: 36px; }
+  .btn-sm { display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; border: 1px solid var(--primary); color: var(--primary); background: #fff; cursor: pointer; font-family: var(--font); }
+  .btn-sm:hover { background: var(--accent-bg); }
+  .btn-sm.danger { border-color: #c9302c; color: #c9302c; }
+  .btn-sm.danger:hover { background: #fdeeee; }
+  .btn-del { border: 0; background: none; color: #c9302c; font-size: 18px; cursor: pointer; line-height: 1; padding: 4px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
+
+  .compare { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0; }
+  .compare .box { border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; }
+  .compare .box.best { border-color: var(--success); background: #ecf8f1; }
+  .compare .box .lbl { font-size: 13px; color: var(--muted); }
+  .compare .box .val { font-size: 22px; font-weight: 700; margin: 4px 0; font-variant-numeric: tabular-nums; }
+  .compare .box .sub { font-size: 12px; color: var(--muted); }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .badge.ok { background: #d9f2e4; color: #1c6b43; }
+  .badge.warn { background: #ffe9c2; color: #8a5a00; }
+  .badge.ng { background: #f9d6d5; color: #9b1c1c; }
+  .checklist { list-style: none; padding: 0; }
+  .checklist li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 14px; }
+  .checklist li input { margin-top: 4px; }
+  .faq dt { font-weight: 700; margin-top: 14px; }
+  .faq dd { margin: 4px 0 0; font-size: 14px; line-height: 1.7; }
+  .small { font-size: 12px; color: var(--muted); }
+  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0; }
+  .flow .st { background: #f6f8fb; border-radius: 8px; padding: 10px; font-size: 13px; }
+  .flow .st b { display: block; color: var(--primary-dark); font-size: 12px; margin-bottom: 2px; }
+  .flow .st span { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 768px) {
+    .grid-2, .grid-3, .compare { grid-template-columns: 1fr; }
+    .month-grid { grid-template-columns: repeat(3, 1fr); }
+    .summary-bar .inner { grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+    .summary-bar .item strong { font-size: 17px; }
+    .card { padding: 18px 16px; }
+  }
+  @media print {
+    .summary-bar, .toolbar, .btn-sm, .btn-del, .no-print, .tool-header .back { display: none !important; }
+    body { background: #fff; }
+    .card { break-inside: avoid; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="tool-header">
+  <div class="inner">
+    <div class="title">副業 確定申告シミュレーター<small>会社員 × 事業所得(青色申告) × 損益通算に対応。入力はこのブラウザにだけ保存されます。</small></div>
+    <a class="back" href="https://kaigo-navi-kansai.github.io/">関西介護ナビ</a>
+  </div>
+</div>
+
+<div class="summary-bar">
+  <div class="inner">
+    <div class="item"><small>副業の所得(青色控除後)</small><strong id="s-biz">—</strong></div>
+    <div class="item"><small>所得税の還付 / 納付</small><strong id="s-tax">—</strong></div>
+    <div class="item"><small>住民税の減少見込み(概算)</small><strong id="s-jumin">—</strong></div>
+    <div class="item"><small>判定</small><strong id="s-judge" style="font-size:15px">—</strong></div>
+  </div>
+</div>
+
+<main class="tool-wrap">
+
+  <!-- 結論 -->
+  <section class="card" id="verdict-card">
+    <h2>あなたのケースの結論</h2>
+    <div id="verdict"></div>
+  </section>
+
+  <!-- STEP 1 -->
+  <section class="card">
+    <h2><span class="step">1</span>基本設定</h2>
+    <p class="lead">どの年分を、どの区分で申告するかを決めます。</p>
+    <div class="grid-2">
+      <div class="field">
+        <label for="year">申告する年分</label>
+        <select id="year" data-bind="year">
+          <option value="2024">令和6年分(2024年1〜12月)</option>
+          <option value="2025">令和7年分(2025年1〜12月)</option>
+          <option value="2026" selected>令和8年分(2026年1〜12月)</option>
+          <option value="2027">令和9年分(2027年1〜12月)</option>
+        </select>
+        <div class="hint" id="deadline-hint"></div>
+      </div>
+      <div class="field">
+        <label>青色申告特別控除の区分</label>
+        <div class="radio-group">
+          <label class="radio-card"><input type="radio" name="aoiro" value="650000" data-bind="aoiro"><span>65万円控除<small>複式簿記 + 貸借対照表添付 + e-Taxで期限内申告(または優良な電子帳簿保存)</small></span></label>
+          <label class="radio-card"><input type="radio" name="aoiro" value="550000" data-bind="aoiro"><span>55万円控除<small>複式簿記 + 貸借対照表添付、紙で期限内申告</small></span></label>
+          <label class="radio-card"><input type="radio" name="aoiro" value="100000" data-bind="aoiro"><span>10万円控除<small>簡易簿記(現金出納帳など)。期限後申告の場合もこちら</small></span></label>
+        </div>
+        <div class="hint">※ 控除額は「控除前の事業所得」が上限です。赤字のときは0円になり、赤字を増やすことはできません。</div>
+      </div>
+    </div>
+    <h3>事業所得として申告できるかの確認</h3>
+    <label class="check"><input type="checkbox" data-bind="hasBooks"> 帳簿(現金出納帳・経費帳など)をつけ、領収書・請求書を保存している</label>
+    <label class="check"><input type="checkbox" data-bind="aoiroFiled"> 「所得税の青色申告承認申請書」を、申告する年の3月15日まで(開業から2か月以内)に提出済み</label>
+    <label class="check"><input type="checkbox" data-bind="paidAsSalary"> 副業先からは「給与」(給与明細・源泉徴収票が出る)として支払われている</label>
+    <div id="basis-note"></div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="card">
+    <h2><span class="step">2</span>本業の給与(源泉徴収票)</h2>
+    <p class="lead">勤務先からもらう「給与所得の源泉徴収票」の数字をそのまま入れます。</p>
+    <div class="grid-2">
+      <div class="field">
+        <label for="pay">支払金額<span class="unit">円</span></label>
+        <input type="text" id="pay" class="num" inputmode="numeric" data-bind="salary.pay" placeholder="例: 4,500,000">
+      </div>
+      <div class="field">
+        <label for="afterDed">給与所得控除後の金額<span class="unit">円</span></label>
+        <input type="text" id="afterDed" class="num" inputmode="numeric" data-bind="salary.afterDeduction" placeholder="空欄なら自動計算">
+        <div class="hint" id="salary-auto"></div>
+      </div>
+      <div class="field">
+        <label for="deductions">所得控除の額の合計額<span class="unit">円</span></label>
+        <input type="text" id="deductions" class="num" inputmode="numeric" data-bind="salary.deductions" placeholder="例: 1,100,000">
+        <div class="hint">社会保険料・生命保険料・基礎控除などの合計。年末調整済みの額です。基礎控除は合計所得に応じてツール側で再計算します。</div>
+      </div>
+      <div class="field">
+        <label for="withheld">源泉徴収税額<span class="unit">円</span></label>
+        <input type="text" id="withheld" class="num" inputmode="numeric" data-bind="salary.withheld" placeholder="例: 85,000">
+        <div class="hint">ここが還付の原資。これより多くは戻りません。</div>
+      </div>
+    </div>
+    <h3>年末調整で引けていない控除(あれば)</h3>
+    <div class="grid-3">
+      <div class="field">
+        <label for="medical">医療費の支払額(年間)<span class="unit">円</span></label>
+        <input type="text" id="medical" class="num" inputmode="numeric" data-bind="extra.medical" placeholder="0">
+      </div>
+      <div class="field">
+        <label for="medicalComp">うち保険金等で補填された額<span class="unit">円</span></label>
+        <input type="text" id="medicalComp" class="num" inputmode="numeric" data-bind="extra.medicalComp" placeholder="0">
+      </div>
+      <div class="field">
+        <label for="furusato">ふるさと納税の寄附額<span class="unit">円</span></label>
+        <input type="text" id="furusato" class="num" inputmode="numeric" data-bind="extra.furusato" placeholder="0">
+        <div class="hint">確定申告するとワンストップ特例は無効になるので、必ずここに入れます。</div>
+      </div>
+      <div class="field">
+        <label for="otherDed">その他の所得控除<span class="unit">円</span></label>
+        <input type="text" id="otherDed" class="num" inputmode="numeric" data-bind="extra.other" placeholder="0">
+        <div class="hint">雑損控除、年末調整に出し忘れたiDeCo・生命保険料など。</div>
+      </div>
+      <div class="field" id="teigaku-field" style="display:none">
+        <label for="teigaku">定額減税額(令和6年分のみ)<span class="unit">円</span></label>
+        <input type="text" id="teigaku" class="num" inputmode="numeric" data-bind="teigaku" placeholder="30,000">
+        <div class="hint">本人3万円 + 同一生計配偶者・扶養親族1人につき3万円。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="card">
+    <h2><span class="step">3</span>副業の売上(収入)</h2>
+    <p class="lead">入金日ではなく、仕事をした(納品・役務提供した)月で計上します(発生主義)。12月分が翌年1月入金でも当年の売上です。</p>
+    <div class="month-grid" id="month-grid"></div>
+    <div class="grid-2" style="margin-top:14px">
+      <div class="field">
+        <label for="bankMemo">売上入金口座(メモ)</label>
+        <input type="text" id="bankMemo" data-bind="bankMemo" placeholder="例: ○○銀行 ○○支店 普通 1234567" autocomplete="off">
+        <div class="hint">副業の売上をこの口座に集約しておくと、通帳＝売上帳として帳簿と突き合わせでき、事業性の説明材料にもなります。この欄は端末内にだけ保存されます。</div>
+      </div>
+      <div class="field">
+        <label for="otherIncome">雑収入(事業に付随する収入)<span class="unit">円</span></label>
+        <input type="text" id="otherIncome" class="num" inputmode="numeric" data-bind="otherIncome" placeholder="0">
+      </div>
+      <div class="field">
+        <label>売上合計</label>
+        <input type="text" class="num" id="sales-total" readonly>
+      </div>
+    </div>
+    <h3>仕入(物販・飲食など、商品原価がある場合のみ)</h3>
+    <div class="grid-3">
+      <div class="field"><label for="cogsOpen">期首商品棚卸高<span class="unit">円</span></label><input type="text" id="cogsOpen" class="num" inputmode="numeric" data-bind="cogs.open" placeholder="0"></div>
+      <div class="field"><label for="cogsBuy">仕入金額<span class="unit">円</span></label><input type="text" id="cogsBuy" class="num" inputmode="numeric" data-bind="cogs.purchase" placeholder="0"></div>
+      <div class="field"><label for="cogsClose">期末商品棚卸高<span class="unit">円</span></label><input type="text" id="cogsClose" class="num" inputmode="numeric" data-bind="cogs.close" placeholder="0"></div>
+    </div>
+  </section>
+
+  <!-- STEP 4 -->
+  <section class="card">
+    <h2><span class="step">4</span>必要経費</h2>
+    <p class="lead">1行1レシートが理想ですが、科目ごとの年間合計でもOKです。自宅家賃・通信費・光熱費など私用と兼用のものは「按分%」で事業分だけを計上します。</p>
+    <div class="grid-2" style="margin-bottom:6px">
+      <div class="field">
+        <label for="expBankMemo">経費の支払口座・カード(メモ)</label>
+        <input type="text" id="expBankMemo" data-bind="expBankMemo" placeholder="例: ○○銀行 ○○支店 普通 1234567 / ○○カード" autocomplete="off">
+        <div class="hint">私用の支出が混ざった口座でも問題ありません。明細から<strong>事業に関係する支出だけ</strong>を拾い、兼用のものは按分%で事業分に絞ります。この欄は端末内にだけ保存されます。</div>
+      </div>
+      <div class="field">
+        <label>科目ごとに按分%を一括設定</label>
+        <div style="display:flex; gap:6px; align-items:center">
+          <select id="bulk-cat" style="flex:1"></select>
+          <input type="text" id="bulk-ratio" class="num" inputmode="numeric" value="100" style="width:70px">
+          <span class="unit">%</span>
+          <button class="btn-sm" id="bulk-apply">適用</button>
+        </div>
+        <div class="hint">例: 通信費を50%、地代家賃を20%にまとめて変更。</div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="btn-sm" id="add-row">＋ 行を追加</button>
+      <button class="btn-sm" id="add-template">定番の科目をまとめて追加</button>
+      <button class="btn-sm" id="csv-export">CSV書き出し</button>
+      <label class="btn-sm" for="csv-import">CSV読み込み(このツール形式 / 銀行・カード明細)</label>
+      <input type="file" id="csv-import" accept=".csv,text/csv" style="display:none">
+      <button class="btn-sm" id="del-zero">按分0%の行を削除</button>
+      <span class="small">銀行の入出金明細CSV(楽天銀行など)を読み込むと、出金だけを取り込み科目を自動推定します。私用の支出は×で削除するか按分0%に。</span>
+    </div>
+    <div class="callout warn" style="margin-top:0">
+      <strong>按分の目安(根拠をメモに残す)</strong>
+      <ul>
+        <li>スマホ・ネット: 業務での使用時間や日数の割合(例: 平日夜+週末に使用 → 30〜50%)</li>
+        <li>自宅家賃・電気代: 作業スペースの面積割合(例: 6畳/30畳 → 20%)。持ち家のローン元本は不可(利息・固定資産税は按分可)</li>
+        <li>車: 事業で使った走行距離または日数の割合。ガソリン・駐車場・保険・車検も同じ率で</li>
+        <li>副業先までの交通費、副業専用の備品・材料・書籍は100%</li>
+        <li>自分の食事・日用品・家族分の支出は0%(=入れない)</li>
+      </ul>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl" id="exp-table">
+        <thead><tr>
+          <th class="c-date">日付</th><th class="c-cat">科目</th><th>内容・相手先</th>
+          <th class="c-amt num">金額</th><th class="c-ratio num">按分%</th><th class="c-after num">経費計上額</th><th class="c-del"></th>
+        </tr></thead>
+        <tbody id="exp-body"></tbody>
+        <tfoot><tr class="total"><td colspan="3">経費合計</td><td class="num" id="exp-gross">0</td><td></td><td class="num" id="exp-total">0</td><td></td></tr></tfoot>
+      </table>
+    </div>
+    <div class="callout info">
+      <strong>経費にできるかの目安</strong>
+      <ul>
+        <li>「その売上を得るために直接必要だった支出」が原則。説明できるものだけ計上します。</li>
+        <li>10万円未満の備品は全額その年の経費(消耗品費)。10万円以上30万円未満は青色申告なら「少額減価償却資産の特例」で全額経費(年300万円まで。決算書の減価償却費欄に記載)。</li>
+        <li>自宅の家賃・光熱費・通信費は、使用面積や時間で合理的に按分(例: 作業部屋が全体の20%なら20%)。</li>
+        <li>スーツ・日常の食事・家族との外食は原則NG。副業先との打ち合わせ飲食は接待交際費や会議費としてOK。</li>
+        <li>本業(会社員)にも使うものは、副業で使う割合だけ。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- STEP 5 -->
+  <section class="card">
+    <h2><span class="step">5</span>計算結果</h2>
+    <p class="lead">所得税の計算の流れを上から順に表示します。</p>
+    <div class="flow" id="flow"></div>
+    <div class="tbl-wrap"><table class="tbl" id="calc-table"></table></div>
+
+    <h3>3パターン比較</h3>
+    <div class="compare" id="compare"></div>
+    <div id="compare-note"></div>
+
+    <h3>住民税への影響(概算)</h3>
+    <div id="jumin"></div>
+  </section>
+
+  <!-- STEP 6 -->
+  <section class="card">
+    <h2><span class="step">6</span>青色申告決算書(一般用)への転記</h2>
+    <p class="lead">決算書1ページ目「損益計算書」の各欄に入れる金額です。番号は国税庁様式の丸数字に対応しています。</p>
+    <div class="tbl-wrap"><table class="tbl" id="pl-table"></table></div>
+    <div class="callout warn" id="bs-note"></div>
+  </section>
+
+  <!-- STEP 7 -->
+  <section class="card">
+    <h2><span class="step">7</span>確定申告書 第一表への転記</h2>
+    <p class="lead">e-Tax(確定申告書等作成コーナー)なら源泉徴収票と決算書の数字を入れれば自動で埋まりますが、照合用に。</p>
+    <div class="tbl-wrap"><table class="tbl" id="form-table"></table></div>
+    <div id="form4-note"></div>
+  </section>
+
+  <!-- STEP 8 -->
+  <section class="card">
+    <h2><span class="step">8</span>提出前チェックリスト</h2>
+    <ul class="checklist" id="checklist"></ul>
+    <div class="toolbar no-print" style="margin-top:16px">
+      <button class="btn-sm" onclick="window.print()">この画面を印刷 / PDF保存</button>
+      <button class="btn-sm danger" id="reset-all">入力データをすべて消去</button>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="card faq">
+    <h2>よくある疑問</h2>
+    <dl>
+      <dt>Q. 会社員の副業で、経費を乗せて赤字で申告してもいい?</dt>
+      <dd>青色申告の<strong>事業所得</strong>なら可能です。赤字は給与所得と<strong>損益通算</strong>でき、源泉徴収された所得税が還付され、翌年の住民税も下がります。それでも引ききれない赤字は3年間繰り越せます(純損失の繰越控除、第四表が必要)。ただし「事業所得と認められるか」が前提で、以下の3点に注意してください。
+        <ul>
+          <li><strong>帳簿と証憑</strong>: 令和4年の通達改正で、副業収入が300万円以下でも帳簿書類を保存していれば原則として事業所得。帳簿がなければ雑所得(赤字は切り捨て、損益通算不可)。</li>
+          <li><strong>収入が僅少/営利性なし</strong>: 帳簿があっても、「収入が例年300万円以下で主たる収入(給与)の10%未満」や「例年赤字で、赤字を解消する取組みもない」場合は、個別に雑所得と判断されることがあります。赤字申告は1〜2年なら問題になりにくいですが、毎年続くと否認リスクが上がります。</li>
+          <li><strong>経費の実在性</strong>: 赤字申告は税務署の目に留まりやすいので、私的支出を混ぜない、按分根拠を残す、を徹底。</li>
+        </ul>
+      </dd>
+      <dt>Q. 副業所得が20万円以下なら申告不要と聞いたけど?</dt>
+      <dd>給与1か所・年末調整済みで、給与以外の<strong>所得(売上−経費)</strong>が20万円以下なら所得税の確定申告は義務ではありません。ただし住民税の申告は別途必要で、医療費控除やふるさと納税、還付目的で確定申告するなら副業分も必ず含めます。赤字で還付を受けたいなら、そもそも確定申告が必要です。</dd>
+      <dt>Q. 青色申告特別控除で赤字を大きくできる?</dt>
+      <dd>できません。65万円控除は「控除前の所得」が上限なので、売上30万円・経費20万円なら控除は10万円で所得0円。経費が売上を超えていれば控除は0円です。</dd>
+      <dt>Q. 会社に副業がバレない?</dt>
+      <dd>黒字の場合は住民税を「自分で納付(普通徴収)」にすれば副業分は会社に通知されません。<strong>赤字で損益通算すると、給与にかかる住民税そのものが下がる</strong>ため、会社に届く特別徴収税額通知の金額が減ります。経理担当が見比べれば気づく可能性はあります。</dd>
+      <dt>Q. 副業先から「給与」でもらっている場合は?</dt>
+      <dd>給与所得なので事業所得にはなりません。経費は乗せられず、損益通算もできません。2か所給与として確定申告が必要(副業給与が年20万円超の場合)。業務委託契約に切り替えて請求書を発行する形なら事業所得になり得ます。</dd>
+      <dt>Q. 前年も青色申告していた場合は?</dt>
+      <dd>今年の純損失を前年に繰り戻して、前年の所得税の還付を受ける「純損失の繰戻し還付」も選べます(期限内申告が条件、別途「還付請求書」を提出)。</dd>
+    </dl>
+    <p class="small" style="margin-top:16px">※ 本ツールは所得税法・国税庁公表資料に基づく概算であり、実際の税額は申告内容・市区町村の計算により異なります。所得金額調整控除、配当・譲渡所得、住宅ローン控除などの税額控除は反映していません。最終判断は税務署・税理士にご確認ください。</p>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ========== 定数 ========== */
+  const KEY = 'fukugyo-tax-v1';
+  const YEARS = {
+    2024: { wareki: '令和6年分', start: '2025-02-17', end: '2025-03-17' },
+    2025: { wareki: '令和7年分', start: '2026-02-16', end: '2026-03-16' },
+    2026: { wareki: '令和8年分', start: '2027-02-16', end: '2027-03-15' },
+    2027: { wareki: '令和9年分', start: '2028-02-16', end: '2028-03-15' },
+  };
+  // 青色申告決算書 損益計算書の科目と欄番号
+  const CATS = [
+    ['租税公課', '⑧'], ['荷造運賃', '⑨'], ['水道光熱費', '⑩'], ['旅費交通費', '⑪'], ['通信費', '⑫'],
+    ['広告宣伝費', '⑬'], ['接待交際費', '⑭'], ['損害保険料', '⑮'], ['修繕費', '⑯'], ['消耗品費', '⑰'],
+    ['減価償却費', '⑱'], ['福利厚生費', '⑲'], ['給料賃金', '⑳'], ['外注工賃', '㉑'], ['利子割引料', '㉒'],
+    ['地代家賃', '㉓'], ['貸倒金', '㉔'],
+    ['新聞図書費', '㉕〜㉚'], ['研修費', '㉕〜㉚'], ['支払手数料', '㉕〜㉚'], ['車両費', '㉕〜㉚'], ['会議費', '㉕〜㉚'],
+    ['雑費', '㉛'],
+  ];
+  const TEMPLATE_ROWS = [
+    ['通信費', 'スマホ・ネット回線(事業分)', 50],
+    ['地代家賃', '自宅家賃(作業スペース按分)', 20],
+    ['水道光熱費', '自宅電気代(按分)', 20],
+    ['旅費交通費', '電車・バス・ガソリン(副業先への移動)', 100],
+    ['消耗品費', '文具・PC周辺機器・材料', 100],
+    ['新聞図書費', '書籍・有料情報', 100],
+    ['研修費', 'セミナー・講座受講料', 100],
+    ['接待交際費', '取引先との打ち合わせ飲食・手土産', 100],
+    ['支払手数料', '振込手数料・決済手数料・会計ソフト', 100],
+    ['租税公課', '印紙税・個人事業税', 100],
+  ];
+
+  /* ========== ユーティリティ ========== */
+  const $ = (s, el) => (el || document).querySelector(s);
+  const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
+  const z2h = s => String(s).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[，、]/g, ',');
+  const num = v => { const n = parseInt(z2h(v == null ? '' : v).replace(/[^0-9-]/g, ''), 10); return isNaN(n) ? 0 : n; };
+  const fmt = n => (n < 0 ? '−' : '') + Math.abs(Math.round(n)).toLocaleString('ja-JP');
+  const yen = n => fmt(n) + '円';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const todayISO = () => new Date().toISOString().slice(0, 10);
+
+  function defaultState() {
+    return {
+      year: 2026, aoiro: 650000, hasBooks: true, aoiroFiled: true, paidAsSalary: false,
+      salary: { pay: '', afterDeduction: '', deductions: '', withheld: '' },
+      extra: { medical: '', medicalComp: '', furusato: '', other: '' },
+      teigaku: '30000',
+      sales: ['', '', '', '', '', '', '', '', '', '', '', ''],
+      otherIncome: '',
+      bankMemo: '',
+      expBankMemo: '',
+      cogs: { open: '', purchase: '', close: '' },
+      expenses: [{ date: '', cat: '通信費', memo: '', amount: '', ratio: 100 }],
+      checks: {},
+    };
+  }
+  function load() {
+    try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.salary) return Object.assign(defaultState(), s); } catch (e) { /* ignore */ }
+    return defaultState();
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* ignore */ } }
+  const getPath = (o, p) => p.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
+  const setPath = (o, p, v) => { const ks = p.split('.'); const last = ks.pop(); const t = ks.reduce((a, k) => (a[k] = a[k] || {}), o); t[last] = v; };
+
+  let state = load();
+
+  /* ========== 税額計算ロジック ========== */
+  // 給与所得控除
+  function salaryDeduction(pay, year) {
+    if (pay <= 0) return 0;
+    if (year >= 2025) {
+      if (pay <= 1900000) return 650000;
+    } else {
+      if (pay <= 1625000) return 550000;
+      if (pay <= 1800000) return Math.floor(pay * 0.4 - 100000);
+    }
+    if (pay <= 3600000) return Math.floor(pay * 0.3 + 80000);
+    if (pay <= 6600000) return Math.floor(pay * 0.2 + 440000);
+    if (pay <= 8500000) return Math.floor(pay * 0.1 + 1100000);
+    return 1950000;
+  }
+  // 基礎控除(所得税)
+  function basicDeduction(total, year) {
+    if (year >= 2025) {
+      if (total <= 1320000) return 950000;
+      if (year <= 2026) { // 令和7・8年分の上乗せ
+        if (total <= 3360000) return 880000;
+        if (total <= 4890000) return 680000;
+        if (total <= 6550000) return 630000;
+      }
+      if (total <= 23500000) return 580000;
+    }
+    if (total <= 24000000) return 480000;
+    if (total <= 24500000) return 320000;
+    if (total <= 25000000) return 160000;
+    return 0;
+  }
+  // 所得税 速算表
+  function incomeTax(t) {
+    if (t <= 0) return 0;
+    if (t <= 1950000) return Math.floor(t * 0.05);
+    if (t <= 3300000) return Math.floor(t * 0.10 - 97500);
+    if (t <= 6950000) return Math.floor(t * 0.20 - 427500);
+    if (t <= 9000000) return Math.floor(t * 0.23 - 636000);
+    if (t <= 18000000) return Math.floor(t * 0.33 - 1536000);
+    if (t <= 40000000) return Math.floor(t * 0.40 - 2796000);
+    return Math.floor(t * 0.45 - 4796000);
+  }
+  function isLate(year) { return todayISO() > YEARS[year].end; }
+
+  function expenseByCat(s) {
+    const map = {};
+    let gross = 0, total = 0;
+    s.expenses.forEach(e => {
+      const a = num(e.amount), r = Math.min(100, Math.max(0, num(e.ratio === '' ? 100 : e.ratio)));
+      const v = Math.floor(a * r / 100);
+      gross += a; total += v;
+      map[e.cat] = (map[e.cat] || 0) + v;
+    });
+    return { map, gross, total };
+  }
+
+  // mode: 'biz'(事業所得・青色) | 'misc'(雑所得) | 'none'(申告しない)
+  function calc(s, mode) {
+    const year = +s.year;
+    const pay = num(s.salary.pay);
+    const salaryDed = salaryDeduction(pay, year);
+    const salaryIncome = s.salary.afterDeduction !== '' ? num(s.salary.afterDeduction) : Math.max(0, pay - salaryDed);
+    const sales = s.sales.reduce((a, v) => a + num(v), 0);
+    const otherIncome = num(s.otherIncome);
+    const revenue = sales + otherIncome;
+    const cogs = Math.max(0, num(s.cogs.open) + num(s.cogs.purchase) - num(s.cogs.close));
+    const ex = expenseByCat(s);
+    const profitBefore = revenue - cogs - ex.total; // ㊳
+    const late = isLate(year);
+    const white = !s.aoiroFiled; // 青色承認なし → 白色申告
+    let aoiroCap = (s.paidAsSalary || white) ? 0 : num(s.aoiro);
+    if (late && aoiroCap > 100000) aoiroCap = 100000;
+    let aoiroDed = 0, bizIncome = 0, miscIncome = 0;
+    if (mode === 'biz') {
+      aoiroDed = Math.max(0, Math.min(aoiroCap, profitBefore));
+      bizIncome = profitBefore - aoiroDed; // 赤字可
+    } else if (mode === 'misc') {
+      miscIncome = Math.max(0, profitBefore); // 雑所得の赤字は切捨て
+    }
+    const sideIncome = mode === 'biz' ? bizIncome : miscIncome;
+    const totalRaw = salaryIncome + sideIncome; // 損益通算後
+    const gross = Math.max(0, totalRaw); // 総所得金額
+    const carryLossRaw = totalRaw < 0 ? -totalRaw : 0; // 給与と相殺しきれない純損失
+    const carryLoss = white ? 0 : carryLossRaw; // 繰越は青色申告者のみ
+
+    // 所得控除
+    const basicOnSalary = basicDeduction(salaryIncome, year);
+    const basicNew = basicDeduction(gross, year);
+    const baseDeductions = num(s.salary.deductions);
+    const deductionsAdj = Math.max(0, baseDeductions - basicOnSalary + basicNew);
+    let medical = 0, furusato = 0, other = 0;
+    if (mode !== 'none') {
+      const med = num(s.extra.medical) - num(s.extra.medicalComp);
+      medical = Math.max(0, Math.min(2000000, med - Math.min(100000, Math.floor(gross * 0.05))));
+      const fs = num(s.extra.furusato);
+      furusato = fs > 2000 ? Math.max(0, Math.min(fs, Math.floor(gross * 0.4)) - 2000) : 0;
+      other = num(s.extra.other);
+    }
+    const totalDeductions = mode === 'none' ? baseDeductions : deductionsAdj + medical + furusato + other;
+    const taxable = Math.floor(Math.max(0, gross - totalDeductions) / 1000) * 1000;
+    let tax = incomeTax(taxable);
+    const teigaku = year === 2024 ? num(s.teigaku) : 0;
+    tax = Math.max(0, tax - teigaku);
+    const recon = Math.floor(tax * 0.021);
+    const totalTax = tax + recon;
+    const withheld = num(s.salary.withheld);
+    let diff = totalTax - withheld; // +納付 / −還付
+    if (diff > 0) diff = Math.floor(diff / 100) * 100;
+    if (mode === 'none') diff = 0;
+    if (diff < 0 && -diff > withheld) diff = -withheld;
+
+    // 給与のみの年税額(源泉徴収票の整合チェック用)
+    const taxableSalaryOnly = Math.floor(Math.max(0, salaryIncome - baseDeductions) / 1000) * 1000;
+    const taxSalaryOnly = Math.max(0, incomeTax(taxableSalaryOnly) - teigaku);
+    const totalTaxSalaryOnly = taxSalaryOnly + Math.floor(taxSalaryOnly * 0.021);
+
+    // 住民税(概算): 基礎控除43万、その他控除は所得税と同額とみなす
+    const juminDed = Math.max(0, totalDeductions - basicNew + 430000);
+    const juminTaxable = Math.max(0, gross - juminDed);
+    const juminTax = Math.floor(juminTaxable * 0.10);
+
+    return {
+      year, pay, salaryDed, salaryIncome, sales, otherIncome, revenue, cogs, ex, profitBefore,
+      aoiroCap, aoiroDed, late, white, bizIncome, miscIncome, sideIncome, totalRaw, gross, carryLoss, carryLossRaw,
+      basicOnSalary, basicNew, baseDeductions, deductionsAdj, medical, furusato, other, totalDeductions,
+      taxable, tax, teigaku, recon, totalTax, withheld, diff, juminTax, totalTaxSalaryOnly,
+    };
+  }
+
+  /* ========== 描画 ========== */
+  function bindInputs() {
+    $$('[data-bind]').forEach(el => {
+      const p = el.dataset.bind;
+      const v = getPath(state, p);
+      if (el.type === 'checkbox') el.checked = !!v;
+      else if (el.type === 'radio') el.checked = String(el.value) === String(v);
+      else if (el.classList.contains('num')) el.value = v === '' || v == null ? '' : fmt(num(v));
+      else el.value = v == null ? '' : v;
+      el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'radio' ? 'change' : 'input', () => {
+        let val;
+        if (el.type === 'checkbox') val = el.checked;
+        else if (el.type === 'radio') val = num(el.value);
+        else if (el.tagName === 'SELECT') val = num(el.value);
+        else if (el.classList.contains('num')) val = el.value.trim() === '' ? '' : String(num(el.value));
+        else val = el.value;
+        setPath(state, p, val);
+        save(); render();
+      });
+      if (el.classList.contains('num')) {
+        el.addEventListener('blur', () => { if (el.value.trim() !== '') el.value = fmt(num(el.value)); });
+        el.addEventListener('focus', () => { el.value = el.value.replace(/,/g, '').replace('−', '-'); });
+      }
+    });
+  }
+
+  function renderMonths() {
+    const g = $('#month-grid');
+    g.innerHTML = state.sales.map((v, i) => `<div class="field"><label>${i + 1}月</label><input type="text" class="num" inputmode="numeric" data-month="${i}" value="${v === '' ? '' : fmt(num(v))}" placeholder="0"></div>`).join('');
+    $$('[data-month]', g).forEach(el => {
+      el.addEventListener('input', () => { state.sales[+el.dataset.month] = el.value.trim() === '' ? '' : String(num(el.value)); save(); render(); });
+      el.addEventListener('blur', () => { if (el.value.trim() !== '') el.value = fmt(num(el.value)); });
+      el.addEventListener('focus', () => { el.value = el.value.replace(/,/g, ''); });
+    });
+  }
+
+  function renderExpenses() {
+    const body = $('#exp-body');
+    const opts = CATS.map(c => `<option value="${c[0]}">${c[0]}</option>`).join('');
+    body.innerHTML = state.expenses.map((e, i) => {
+      const a = num(e.amount), r = e.ratio === '' ? 100 : num(e.ratio);
+      return `<tr data-i="${i}">
+        <td><input type="text" data-f="date" value="${esc(e.date)}" placeholder="2026/04/01"></td>
+        <td><select data-f="cat">${opts}</select></td>
+        <td><input type="text" data-f="memo" value="${esc(e.memo)}" placeholder="例: ○○交通 池田駅往復"></td>
+        <td><input type="text" class="num" inputmode="numeric" data-f="amount" value="${e.amount === '' ? '' : fmt(a)}" placeholder="0"></td>
+        <td><input type="text" class="num" inputmode="numeric" data-f="ratio" value="${r}"></td>
+        <td class="num">${fmt(Math.floor(a * Math.min(100, Math.max(0, r)) / 100))}</td>
+        <td><button class="btn-del" title="削除" data-del="${i}">×</button></td>
+      </tr>`;
+    }).join('');
+    $$('tr', body).forEach(tr => {
+      const i = +tr.dataset.i;
+      const sel = $('select', tr); sel.value = state.expenses[i].cat || CATS[0][0];
+      $$('[data-f]', tr).forEach(el => {
+        const f = el.dataset.f;
+        el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+          let v = el.value;
+          if (f === 'amount') v = v.trim() === '' ? '' : String(num(v));
+          if (f === 'ratio') v = v.trim() === '' ? '' : String(Math.min(100, Math.max(0, num(v))));
+          state.expenses[i][f] = v; save();
+          renderCalcOnly();
+          if (f === 'amount' || f === 'ratio') { const a = num(state.expenses[i].amount), r = state.expenses[i].ratio === '' ? 100 : num(state.expenses[i].ratio); tr.children[5].textContent = fmt(Math.floor(a * Math.min(100, Math.max(0, r)) / 100)); }
+        });
+        if (f === 'amount') {
+          el.addEventListener('blur', () => { if (el.value.trim() !== '') el.value = fmt(num(el.value)); });
+          el.addEventListener('focus', () => { el.value = el.value.replace(/,/g, ''); });
+        }
+      });
+    });
+    $$('[data-del]', body).forEach(b => b.addEventListener('click', () => { state.expenses.splice(+b.dataset.del, 1); if (!state.expenses.length) state.expenses.push({ date: '', cat: '通信費', memo: '', amount: '', ratio: 100 }); save(); render(); }));
+  }
+
+  function verdict(c, cm) {
+    const s = state;
+    const out = [];
+    const sideLabel = c.profitBefore < 0 ? '赤字' : '黒字';
+    const bizAllowed = !s.paidAsSalary && s.hasBooks;
+    if (s.paidAsSalary) {
+      out.push(`<div class="callout danger"><strong>副業先から「給与」で受け取っている場合、事業所得にはなりません。</strong>経費計上も損益通算もできず、2か所給与として申告します(副業給与が年20万円超なら申告義務あり)。業務委託に切り替えて請求書払いにすれば事業所得になり得ます。以下の計算は参考値です。</div>`);
+    } else if (!s.hasBooks) {
+      out.push(`<div class="callout danger"><strong>帳簿・領収書の保存がないと、副業収入300万円以下は原則「雑所得」です。</strong>雑所得の赤字は切り捨てで、給与と相殺(損益通算)できません。まず帳簿をつけるところから始めてください(会計ソフト or Excelの現金出納帳でOK)。</div>`);
+    }
+    if (!s.aoiroFiled) {
+      out.push(`<div class="callout warn"><strong>青色申告承認申請書が未提出(または期限後)だと、その年は白色申告</strong>になります。白色でも事業所得なら損益通算はできますが、青色申告特別控除と純損失の繰越(3年)は使えません。来年分に向けて、申告する年の3月15日までに提出を。</div>`);
+    }
+    const unreviewed = state.expenses.filter(e => /【要確認】/.test(e.memo || '')).length;
+    if (c.revenue === 0 && c.pay === 0) {
+      out.push(`<div class="callout info">STEP 2〜4 を入力すると、ここに結論と還付見込み額が表示されます。</div>`);
+      if (unreviewed) out.push(`<div class="callout warn">明細から取り込んだ経費のうち <strong>${unreviewed}件</strong> が【要確認】のままです。事業に関係ない支出は削除し、残すものは科目と按分%を決めてください。</div>`);
+      return out.join('');
+    }
+    if (bizAllowed && c.profitBefore < 0) {
+      out.push(`<div class="callout ok"><strong>結論: 事業所得(青色)で赤字申告 → 損益通算OK。</strong>
+        副業の${sideLabel} ${yen(c.profitBefore)} を給与所得と相殺し、所得税は <strong>${c.diff < 0 ? yen(-c.diff) + ' 還付' : (c.diff === 0 ? '増減なし' : yen(c.diff) + ' 納付')}</strong>、住民税は翌年度 <strong>約${yen(Math.max(0, cm.none.juminTax - c.juminTax))} 減</strong>の見込みです。
+        ${c.carryLoss > 0 ? `給与と相殺しきれない赤字 ${yen(c.carryLoss)} は、第四表を付けて翌年以後3年間に繰り越せます。` : ''}${c.white && c.carryLossRaw > 0 ? `給与と相殺しきれない赤字 ${yen(c.carryLossRaw)} は、白色申告のため繰り越せず切り捨てになります。` : ''}</div>`);
+    } else if (bizAllowed && c.profitBefore >= 0) {
+      out.push(`<div class="callout ok"><strong>結論: 副業は黒字 ${yen(c.profitBefore)}。</strong>青色申告特別控除 ${yen(c.aoiroDed)} を引いた事業所得は ${yen(c.bizIncome)}。所得税は <strong>${c.diff < 0 ? yen(-c.diff) + ' 還付' : (c.diff === 0 ? '増減なし' : yen(c.diff) + ' 納付')}</strong> です。
+        ${c.bizIncome <= 200000 && c.bizIncome > 0 ? '事業所得が20万円以下なので所得税の確定申告は任意ですが、住民税の申告は必要です。65万円控除を使って所得を抑えるには期限内の確定申告が必要です。' : ''}</div>`);
+    }
+    // リスク判定
+    const risks = [];
+    if (c.pay > 0 && c.revenue > 0 && c.revenue < c.pay * 0.1 && c.revenue <= 3000000) {
+      risks.push(`副業の収入 ${yen(c.revenue)} は給与収入の10%未満(${(c.revenue / c.pay * 100).toFixed(1)}%)です。通達上「収入が僅少」の例示に該当し、帳簿があっても<strong>個別判断で雑所得とされる可能性</strong>があります。「事業として継続・反復し、収益を上げる意思がある」ことを説明できる状態(帳簿、取引先との契約、営業活動の記録)にしておきましょう。`);
+    }
+    if (c.profitBefore < 0) {
+      risks.push(`赤字申告は<strong>毎年続くと「営利性がない」とみなされやすく</strong>なります。初年度〜2年目は設備投資等で赤字になりやすいので説明しやすいですが、黒字化の見通し(売上拡大の取組み)を持っておくこと。`);
+      risks.push(`損益通算で給与の住民税自体が下がるため、会社に届く「特別徴収税額の決定通知書」の金額が減ります。<strong>副業を会社に知られたくない場合は要注意</strong>(普通徴収の選択では隠せません)。`);
+    }
+    if (unreviewed) {
+      risks.push(`明細から取り込んだ経費のうち <strong>${unreviewed}件</strong> が【要確認】(科目未判定)のままです。事業に関係ない支出は削除し、残すものは科目と按分%を決めてください。`);
+    }
+    if (c.ex.total > 0 && c.revenue > 0 && c.ex.total > c.revenue * 1.5) {
+      risks.push(`経費が売上の${Math.round(c.ex.total / c.revenue * 100)}%と大きめです。按分率の根拠と領収書を揃え、私的支出が混ざっていないか再確認を。`);
+    }
+    if (c.late && num(s.aoiro) > 100000 && !s.paidAsSalary) {
+      risks.push(`${YEARS[c.year].wareki}の申告期限(${YEARS[c.year].end})を過ぎています。期限後申告では65万・55万円控除は使えず<strong>10万円控除で計算</strong>しています。還付申告自体は翌年1月1日から5年間できます。`);
+    }
+    if (c.withheld > 0 && c.pay > 0) {
+      const expected = cm.none.totalTaxSalaryOnly;
+      if (Math.abs(expected - c.withheld) > Math.max(3000, expected * 0.1)) {
+        risks.push(`源泉徴収税額 ${yen(c.withheld)} が、給与と所得控除から計算した年税額 ${yen(expected)} と離れています。年末調整済みなら通常ほぼ一致するので、源泉徴収票の「支払金額」「所得控除の額の合計額」「源泉徴収税額」の転記ミスがないか確認してください(年末調整未了・2か所給与の場合はこのままで構いません)。`);
+      }
+    }
+    if (c.diff < 0 && -c.diff >= c.withheld && c.withheld > 0) {
+      risks.push(`還付額が源泉徴収税額に達しています。これ以上経費を増やしても所得税の還付は増えません(住民税と繰越損失には効きます)。`);
+    }
+    if (risks.length) out.push(`<div class="callout warn"><strong>注意点</strong><ul>${risks.map(r => `<li>${r}</li>`).join('')}</ul></div>`);
+    return out.join('');
+  }
+
+  function renderCalcOnly() {
+    const c = calc(state, 'biz');
+    const cm = { misc: calc(state, 'misc'), none: calc(state, 'none') };
+    const Y = YEARS[c.year];
+
+    // summary bar
+    $('#s-biz').textContent = yen(c.bizIncome);
+    const t = $('#s-tax');
+    t.textContent = c.diff < 0 ? yen(-c.diff) + ' 還付' : c.diff === 0 ? '0円' : yen(c.diff) + ' 納付';
+    t.className = c.diff < 0 ? 'refund' : c.diff > 0 ? 'pay' : '';
+    $('#s-jumin').textContent = '約' + yen(Math.max(0, cm.none.juminTax - c.juminTax)) + ' 減';
+    const judge = state.paidAsSalary ? '給与所得 (事業不可)' : !state.hasBooks ? '雑所得 (帳簿なし)' : c.white ? (c.profitBefore < 0 ? '白色・赤字 → 損益通算' : '白色・黒字') : c.profitBefore < 0 ? '青色・赤字 → 損益通算' : '青色・黒字';
+    $('#s-judge').textContent = judge;
+
+    $('#verdict').innerHTML = verdict(c, cm);
+
+    // deadline hint
+    $('#deadline-hint').innerHTML = `${Y.wareki}の申告期間: ${Y.start} 〜 ${Y.end}。還付申告は翌年1月1日から受付。` + (c.late ? ' <span class="badge ng">期限超過</span>' : '');
+    $('#teigaku-field').style.display = c.year === 2024 ? '' : 'none';
+    $('#salary-auto').textContent = state.salary.afterDeduction === '' && c.pay > 0 ? `自動計算: ${yen(c.pay)} − 給与所得控除 ${yen(c.salaryDed)} = ${yen(c.salaryIncome)}(源泉徴収票の値を入れるとそちらを優先)` : '';
+    $('#basis-note').innerHTML = (state.hasBooks && !state.paidAsSalary) ? `<div class="callout ok" style="margin-top:8px">帳簿あり → 収入300万円以下でも<strong>原則として事業所得</strong>として扱われます(令和4年10月 所得税基本通達35-2 改正)。</div>` : '';
+
+    // sales
+    $('#sales-total').value = fmt(c.revenue);
+    $('#exp-gross').textContent = fmt(c.ex.gross);
+    $('#exp-total').textContent = fmt(c.ex.total);
+
+    // flow
+    $('#flow').innerHTML = [
+      ['売上', c.revenue], ['− 経費(原価含む)', c.cogs + c.ex.total], ['= 控除前所得', c.profitBefore],
+      ['− 青色申告特別控除', c.aoiroDed], ['= 事業所得', c.bizIncome], ['+ 給与所得', c.salaryIncome],
+      ['= 総所得金額', c.gross], ['− 所得控除', c.totalDeductions], ['= 課税所得', c.taxable],
+      ['所得税+復興税', c.totalTax], ['− 源泉徴収税額', c.withheld], [c.diff < 0 ? '= 還付' : '= 納付', Math.abs(c.diff)],
+    ].map(f => `<div class="st"><b>${f[0]}</b><span>${fmt(f[1])}</span></div>`).join('');
+
+    // calc table
+    const rows = [
+      ['sub', '給与収入(支払金額)', c.pay],
+      ['', '給与所得 ⑥', c.salaryIncome],
+      ['sub', '副業 売上', c.revenue],
+      ['sub', '副業 売上原価', -c.cogs],
+      ['sub', '副業 経費(按分後)', -c.ex.total],
+      ['sub', '青色申告特別控除前の所得 ㊳', c.profitBefore],
+      ['sub', `青色申告特別控除 ㊴(上限 ${yen(c.aoiroCap)})`, -c.aoiroDed],
+      ['', '事業所得 ①(営業等)', c.bizIncome],
+      ['hl', '総所得金額(損益通算後) ⑫', c.gross],
+      c.carryLoss > 0 ? ['', '翌年に繰り越す純損失', c.carryLoss] : null,
+      ['sub', '源泉徴収票の所得控除合計', c.baseDeductions],
+      ['sub', `基礎控除の再計算(給与のみ ${yen(c.basicOnSalary)} → 合計所得ベース ${yen(c.basicNew)})`, c.basicNew - c.basicOnSalary],
+      c.medical ? ['sub', '医療費控除', c.medical] : null,
+      c.furusato ? ['sub', '寄附金控除(ふるさと納税)', c.furusato] : null,
+      c.other ? ['sub', 'その他の所得控除', c.other] : null,
+      ['', '所得控除の合計', c.totalDeductions],
+      ['hl', '課税される所得金額(1,000円未満切捨て)', c.taxable],
+      ['', '所得税額(速算表)', c.tax + c.teigaku],
+      c.teigaku ? ['sub', '定額減税', -c.teigaku] : null,
+      ['sub', '復興特別所得税(2.1%)', c.recon],
+      ['', '所得税及び復興特別所得税の額', c.totalTax],
+      ['sub', '源泉徴収税額', -c.withheld],
+      ['hl', c.diff < 0 ? '還付される税金' : '申告納税額(100円未満切捨て)', Math.abs(c.diff)],
+    ].filter(Boolean);
+    $('#calc-table').innerHTML = rows.map(r => `<tr class="${r[0]}"><td>${r[1]}</td><td class="num">${fmt(r[2])}</td></tr>`).join('');
+
+    // compare
+    const scen = [
+      ['申告しない', cm.none, '源泉徴収のまま。副業所得20万円以下なら所得税は合法。住民税申告は必要'],
+      ['雑所得で申告', cm.misc, '帳簿なし等。赤字は切捨て、青色控除なし'],
+      ['事業所得(青色)で申告', c, '損益通算・青色控除あり'],
+    ];
+    const best = scen.reduce((b, s) => (s[1].diff < b[1].diff ? s : b), scen[0]);
+    $('#compare').innerHTML = scen.map(s => `<div class="box ${s === best ? 'best' : ''}"><div class="lbl">${s[0]}</div><div class="val">${s[1].diff < 0 ? yen(-s[1].diff) + ' 還付' : s[1].diff === 0 ? '±0円' : yen(s[1].diff) + ' 納付'}</div><div class="sub">${s[2]}</div></div>`).join('');
+    const gain = cm.none.diff - c.diff;
+    $('#compare-note').innerHTML = gain > 0 ? `<div class="callout info">事業所得(青色)で申告すると、申告しない場合より所得税で <strong>${yen(gain)}</strong>、住民税で約 <strong>${yen(Math.max(0, cm.none.juminTax - c.juminTax))}</strong> 有利です(合計 約${yen(gain + Math.max(0, cm.none.juminTax - c.juminTax))})。</div>` : (c.revenue > 0 ? `<div class="callout info">黒字のため申告すると納税額が増えますが、副業所得が20万円超なら申告は義務です。</div>` : '');
+
+    // jumin
+    $('#jumin').innerHTML = `<div class="tbl-wrap"><table class="tbl">
+      <tr><th></th><th class="num">申告しない</th><th class="num">事業所得(青色)で申告</th><th class="num">差額</th></tr>
+      <tr><td>住民税 所得割(10%)</td><td class="num">${fmt(cm.none.juminTax)}</td><td class="num">${fmt(c.juminTax)}</td><td class="num">${fmt(c.juminTax - cm.none.juminTax)}</td></tr>
+    </table></div>
+    <p class="small">均等割(年5,000円程度)は変わりません。住民税の所得控除は所得税と一部異なる(基礎控除43万円など)ため概算です。翌年6月からの給与天引き額に反映されます。</p>`;
+
+    // 決算書 損益計算書
+    const pl = [];
+    pl.push(['①', '売上(収入)金額(雑収入を含む)', c.revenue]);
+    pl.push(['②', '期首商品棚卸高', num(state.cogs.open)]);
+    pl.push(['③', '仕入金額', num(state.cogs.purchase)]);
+    pl.push(['④', '小計(②+③)', num(state.cogs.open) + num(state.cogs.purchase)]);
+    pl.push(['⑤', '期末商品棚卸高', num(state.cogs.close)]);
+    pl.push(['⑥', '差引原価(④−⑤)', c.cogs]);
+    pl.push(['⑦', '差引金額(①−⑥)', c.revenue - c.cogs]);
+    CATS.forEach(cat => { const v = c.ex.map[cat[0]] || 0; if (v || !cat[1].startsWith('㉕')) pl.push([cat[1], cat[0] + (cat[1].startsWith('㉕') ? '(空欄に科目名を記入)' : ''), v]); });
+    pl.push(['㉜', '経費計', c.ex.total]);
+    pl.push(['㉝', '差引金額(⑦−㉜)', c.profitBefore]);
+    pl.push(['㊳', '青色申告特別控除前の所得金額', c.profitBefore]);
+    pl.push(['㊴', '青色申告特別控除額', c.aoiroDed]);
+    pl.push(['㊵', '所得金額(㊳−㊴)', c.bizIncome]);
+    $('#pl-table').innerHTML = pl.map(r => `<tr class="${/^(①|㉜|㊳|㊵)$/.test(r[0]) ? 'hl' : ''}"><td style="width:48px">${r[0]}</td><td>${r[1]}</td><td class="num">${fmt(r[2])}</td></tr>`).join('');
+    $('#bs-note').innerHTML = c.white ? `白色申告の場合は青色申告決算書ではなく<strong>収支内訳書(一般用)</strong>を提出します。科目構成はほぼ同じなので上の金額をそのまま転記できます。` : c.aoiroCap >= 550000
+      ? `65万/55万円控除には決算書4ページ目の<strong>貸借対照表</strong>も必要です(期首・期末の現金・預金・売掛金・元入金など)。会計ソフト(freee・マネーフォワード・やよい)で複式簿記をつけていれば自動作成されます。決算書2ページ目「月別売上」にはSTEP 3の月別金額を転記します。`
+      : `10万円控除は貸借対照表不要です。損益計算書(1ページ目)と月別売上(2ページ目)を記入します。`;
+
+    // 第一表
+    const f1 = [
+      ['収入金額等', '事業 営業等 ㋐', c.revenue],
+      ['収入金額等', '給与 ㋕', c.pay],
+      ['所得金額等', '事業 営業等 ①', c.bizIncome],
+      ['所得金額等', '給与 ⑥', c.salaryIncome],
+      ['所得金額等', '合計 ⑫(損益通算後。マイナスなら第四表へ)', c.totalRaw],
+      ['所得から差し引かれる金額', '基礎控除', c.basicNew],
+      c.medical ? ['所得から差し引かれる金額', '医療費控除', c.medical] : null,
+      c.furusato ? ['所得から差し引かれる金額', '寄附金控除', c.furusato] : null,
+      ['所得から差し引かれる金額', '合計(社会保険料等は源泉徴収票から転記)', c.totalDeductions],
+      ['税金の計算', '課税される所得金額', c.taxable],
+      ['税金の計算', '上の金額に対する税額', c.tax + c.teigaku],
+      ['税金の計算', '復興特別所得税額', c.recon],
+      ['税金の計算', '所得税及び復興特別所得税の額', c.totalTax],
+      ['税金の計算', '源泉徴収税額', c.withheld],
+      ['税金の計算', c.diff < 0 ? '還付される税金' : '申告納税額(納める税金)', Math.abs(c.diff)],
+      ['その他', '青色申告特別控除額', c.aoiroDed],
+    ].filter(Boolean);
+    $('#form-table').innerHTML = f1.map(r => `<tr><td style="width:160px" class="small">${r[0]}</td><td>${r[1]}</td><td class="num">${fmt(r[2])}</td></tr>`).join('');
+    $('#form4-note').innerHTML = c.carryLoss > 0
+      ? `<div class="callout warn"><strong>第四表(損失申告用)が必要です。</strong>給与と相殺しきれない純損失 ${yen(c.carryLoss)} を記載し、翌年以後3年間の所得から控除できます。e-Taxなら「損失申告」を選ぶと自動で作成されます。繰越を続けるには、翌年以降も毎年連続して確定申告が必要です。</div>`
+      : c.white && c.carryLossRaw > 0 ? `<div class="callout danger">白色申告のため、給与と相殺しきれない赤字 ${yen(c.carryLossRaw)} は繰り越せません(切り捨て)。来年分からは青色申告承認申請書を出しておきましょう。</div>`
+      : (c.profitBefore < 0 ? `<div class="callout info">赤字はすべて給与所得と相殺できたので、第四表は不要です。第一表の「事業 営業等 ①」にマイナス金額(△)を記入します。</div>` : '');
+
+    // checklist
+    const items = [
+      ['books', '帳簿(仕訳帳・総勘定元帳 または 現金出納帳・経費帳)を1年分つけた'],
+      ['receipts', '領収書・レシート・請求書の控えを月別に保存した(7年保存)'],
+      ['invoice', '売上の根拠(請求書・振込履歴・業務委託契約書)を揃えた'],
+      ['bank', '売上の入金を専用口座に集約し、通帳の入金額と月別売上が一致することを確認した' + (state.bankMemo ? `(${esc(state.bankMemo)})` : '')],
+      ['ratio', '家事按分の根拠(面積・時間・使用日数)をメモした'],
+      ['gensen', '源泉徴収票(原本の提出は不要だが数字の転記に必要)を手元に用意した'],
+      ['mynumber', 'マイナンバーカード + スマホ(またはICカードリーダー)で e-Tax の準備をした'],
+      ['refund', '還付金の振込先口座(本人名義)を確認した'],
+      ['furusato', 'ふるさと納税の寄附金受領証明書 / 医療費の明細を用意した'],
+      ['bs', '65万・55万円控除なら貸借対照表を作成した'],
+      ['jumin', '黒字なら第二表「住民税に関する事項」で徴収方法を選んだ(赤字なら選択不可・会社の税額通知が減る点を理解した)'],
+      ['deadline', `${Y.wareki}の申告期限 ${Y.end} までに送信する(65万円控除は期限内必須)`],
+    ];
+    const cl = $('#checklist');
+    if (!cl.dataset.built) {
+      cl.innerHTML = items.map(it => `<li><input type="checkbox" data-check="${it[0]}" ${state.checks[it[0]] ? 'checked' : ''}><span id="ck-${it[0]}">${it[1]}</span></li>`).join('');
+      $$('[data-check]', cl).forEach(cb => cb.addEventListener('change', () => { state.checks[cb.dataset.check] = cb.checked; save(); }));
+      cl.dataset.built = '1';
+    } else {
+      $('#ck-deadline').textContent = items[items.length - 1][1];
+      $('#ck-bank').innerHTML = items.find(it => it[0] === 'bank')[1];
+    }
+  }
+
+  function render() { renderCalcOnly(); }
+
+  /* ========== CSV ========== */
+  function toCSV() {
+    const head = '日付,科目,内容,金額,按分%';
+    const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+    return '﻿' + [head].concat(state.expenses.map(e => [q(e.date), q(e.cat), q(e.memo), num(e.amount), e.ratio === '' ? 100 : num(e.ratio)].join(','))).join('\r\n');
+  }
+  function guessCat(memo) {
+    const m = String(memo || '').normalize('NFKC'); // 半角カナ・全角英数を正規化
+    const rules = [
+      [/ドコモ|DOCOMO|ソフトバンク|SOFTBANK|KDDI|AU |楽天モバイル|ラクテンモバイル|RAKUTEN MOBILE|モバイル|NTT|OCN|ニフティ|BIGLOBE|SO-NET|ワイモバイル|UQ|IIJ|MINEO|ZOOM|GOOGLE|APPLE\.COM|ITUNES|MICROSOFT|ADOBE|CHATGPT|OPENAI|ANTHROPIC|CANVA|NOTION/i, '通信費'],
+      [/JR|阪急|阪神|近鉄|南海|京阪|地下鉄|メトロ|バス|タクシー|TAXI|ETC|エネオス|ENEOS|出光|コスモ|ガソリン|駐車|パーキング|TIMES|航空|ANA|JAL|新幹線|モバイルSUICA|ICOCA|PITAPA|GO /i, '旅費交通費'],
+      [/AMAZON|アマゾン|ヨドバシ|ビックカメラ|ジョーシン|ダイソー|セリア|ニトリ|カインズ|コーナン|ホームセンター|文具|コクヨ|アスクル|ASKUL|モノタロウ|100円|ロフト|ハンズ/i, '消耗品費'],
+      [/関西電力|電力|エナジー|ガス|水道|大阪ガス|関電|ENEOSでんき|オクトパス/i, '水道光熱費'],
+      [/家賃|不動産|管理費|ハウス|レオパレス|UR都市|エイブル|賃料|レンタルオフィス|コワーキング/i, '地代家賃'],
+      [/書店|BOOK|ブック|紀伊國屋|ジュンク堂|丸善|TSUTAYA|KINDLE|日経|新聞|AUDIBLE|雑誌/i, '新聞図書費'],
+      [/セミナー|講座|研修|スクール|UDEMY|SCHOO|受講|勉強会|資格/i, '研修費'],
+      [/手数料|振込|FREEE|マネーフォワード|弥生|やよい|STRIPE|PAYPAL|SQUARE|STORES|BASE|ペイペイ|PAYPAY/i, '支払手数料'],
+      [/スターバックス|STARBUCKS|ドトール|タリーズ|コメダ|カフェ|喫茶|居酒屋|レストラン|食堂|和食|寿司|焼肉|ホルモン|ビアホール|バル|BAR|ダイニング/i, '接待交際費'],
+      [/郵便|ゆうパック|ヤマト|クロネコ|佐川|西濃|レターパック|メルカリ便|配送/i, '荷造運賃'],
+      [/印紙|税|市役所|府税|県税|国税/i, '租税公課'],
+      [/保険|SOMPO|損保|東京海上|三井住友海上|あいおい/i, '損害保険料'],
+      [/広告|META|FACEBOOK|INSTAGRAM|印刷|ラクスル|プリント|チラシ|名刺|ドメイン|サーバ|XSERVER|ロリポップ|さくら|お名前|WIX|STUDIO/i, '広告宣伝費'],
+    ];
+    for (const r of rules) if (r[0].test(m)) return r[1];
+    return '';
+  }
+  function decodeCSV(buf) {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { /* not utf-8 */ }
+    try { return new TextDecoder('shift_jis').decode(buf); } catch (e) { return new TextDecoder().decode(buf); }
+  }
+  // 銀行・カード明細CSVか判定し、出金行を経費行に変換
+  function bankRowsToExpenses(rows) {
+    const header = rows[0].map(h => String(h).trim());
+    const find = re => header.findIndex(h => re.test(h));
+    const iDate = find(/日付|取引日|利用日|年月日|^日$/);
+    const iOut = find(/^出金|お引出|引落|支払金額|利用金額|ご利用金額/);
+    const iInOut = find(/入出金/);
+    const iIn = find(/^入金|お預入/);
+    const iMemo = find(/内容|摘要|備考|利用店名|ご利用先|加盟店|名称/);
+    if (iDate < 0 || (iOut < 0 && iInOut < 0) || iMemo < 0) return null;
+    const out = [];
+    rows.slice(1).forEach(r => {
+      let amt = 0;
+      if (iOut >= 0 && num(r[iOut]) !== 0) amt = Math.abs(num(r[iOut]));
+      else if (iInOut >= 0) { const v = num(r[iInOut]); if (v < 0) amt = -v; }
+      if (iIn >= 0 && num(r[iIn]) > 0 && !amt) return; // 入金行
+      if (!amt) return;
+      const memo = String(r[iMemo] || '').trim();
+      const cat = guessCat(memo);
+      let date = String(r[iDate] || '').trim();
+      if (/^\d{8}$/.test(date)) date = date.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1/$2/$3');
+      out.push({ date, cat: cat || '雑費', memo: (cat ? '' : '【要確認】') + memo, amount: String(amt), ratio: 100 });
+    });
+    return out;
+  }
+  function parseCSV(text) {
+    const rows = []; let row = [], cur = '', inQ = false;
+    text = text.replace(/^﻿/, '');
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (inQ) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += ch; }
+      else if (ch === '"') inQ = true;
+      else if (ch === ',') { row.push(cur); cur = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+      else cur += ch;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows.filter(r => r.some(c => c.trim() !== ''));
+  }
+
+  /* ========== イベント ========== */
+  function init() {
+    bindInputs();
+    renderMonths();
+    renderExpenses();
+    render();
+
+    $('#add-row').addEventListener('click', () => { state.expenses.push({ date: '', cat: '消耗品費', memo: '', amount: '', ratio: 100 }); save(); renderExpenses(); render(); });
+    $('#add-template').addEventListener('click', () => {
+      if (state.expenses.length === 1 && !state.expenses[0].memo && !state.expenses[0].amount) state.expenses = [];
+      TEMPLATE_ROWS.forEach(t => state.expenses.push({ date: `${state.year}/12/31`, cat: t[0], memo: t[1] + '(年間合計)', amount: '', ratio: t[2] }));
+      save(); renderExpenses(); render();
+    });
+    $('#csv-export').addEventListener('click', () => {
+      const blob = new Blob([toCSV()], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `keihi-${state.year}.csv`; a.click(); URL.revokeObjectURL(a.href);
+    });
+    $('#csv-import').addEventListener('change', ev => {
+      const file = ev.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const rows = parseCSV(decodeCSV(reader.result));
+        if (!rows.length) return;
+        const names = CATS.map(c => c[0]);
+        const isOwn = /日付/.test(rows[0][0] || '') && /科目/.test(rows[0][1] || '');
+        let imported;
+        if (isOwn) {
+          imported = rows.slice(1).map(r => ({
+            date: (r[0] || '').trim(), cat: names.includes((r[1] || '').trim()) ? r[1].trim() : '雑費',
+            memo: ((r[2] || '') + (names.includes((r[1] || '').trim()) ? '' : `(元科目: ${r[1] || ''})`)).trim(),
+            amount: String(num(r[3])), ratio: r[4] == null || r[4] === '' ? 100 : Math.min(100, Math.max(0, num(r[4]))),
+          }));
+        } else {
+          imported = bankRowsToExpenses(rows);
+          if (!imported) { alert('CSVの形式を判定できませんでした。\n対応形式: このツールのCSV(日付,科目,内容,金額,按分%) または 銀行・カード明細CSV(日付・出金額・内容の列があるもの)'); return; }
+          if (!imported.length) { alert('出金(経費候補)の行が見つかりませんでした。'); return; }
+          const unknown = imported.filter(e => e.memo.startsWith('【要確認】')).length;
+          alert(`銀行・カード明細として ${imported.length} 件の出金を取り込みます。\n科目を推定できなかった ${unknown} 件は「雑費」+【要確認】にしています。\n\n取り込み後、私用の支出は × で削除(または按分0%)し、兼用のものは按分%を調整してください。`);
+        }
+        if (!imported.length) return;
+        const replace = confirm(`${imported.length}行を読み込みます。\nOK: 既存の経費を置き換える / キャンセル: 既存に追加する`);
+        state.expenses = replace ? imported : state.expenses.filter(e => e.amount !== '' || e.memo).concat(imported);
+        save(); renderExpenses(); render();
+      };
+      reader.readAsArrayBuffer(file);
+      ev.target.value = '';
+    });
+    $('#bulk-cat').innerHTML = CATS.map(c => `<option value="${c[0]}">${c[0]}</option>`).join('');
+    $('#bulk-apply').addEventListener('click', () => {
+      const cat = $('#bulk-cat').value, r = Math.min(100, Math.max(0, num($('#bulk-ratio').value)));
+      let n = 0; state.expenses.forEach(e => { if (e.cat === cat) { e.ratio = r; n++; } });
+      if (!n) { alert(`「${cat}」の行がありません。`); return; }
+      save(); renderExpenses(); render();
+    });
+    $('#del-zero').addEventListener('click', () => {
+      const zero = state.expenses.filter(e => e.ratio !== '' && num(e.ratio) === 0 && (e.amount !== '' || e.memo));
+      if (!zero.length) { alert('按分0%の行はありません。'); return; }
+      if (!confirm(`按分0%の ${zero.length} 行を削除します。よろしいですか?`)) return;
+      state.expenses = state.expenses.filter(e => !zero.includes(e));
+      if (!state.expenses.length) state.expenses.push({ date: '', cat: '通信費', memo: '', amount: '', ratio: 100 });
+      save(); renderExpenses(); render();
+    });
+    $('#reset-all').addEventListener('click', () => {
+      if (!confirm('このブラウザに保存した入力データをすべて消去します。よろしいですか?')) return;
+      localStorage.removeItem(KEY); state = defaultState(); location.reload();
+    });
+  }
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
