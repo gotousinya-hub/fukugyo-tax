@@ -238,6 +238,18 @@
     <h2><span class="step">3</span>副業の売上(収入)</h2>
     <p class="lead">入金日ではなく、仕事をした(納品・役務提供した)月で計上します(発生主義)。12月分が翌年1月入金でも当年の売上です。</p>
     <div class="month-grid" id="month-grid"></div>
+    <div class="toolbar">
+      <label class="btn-sm" for="sales-csv">売上口座の明細CSVを読み込む(入金 → 月別売上)</label>
+      <input type="file" id="sales-csv" accept=".csv,text/csv" style="display:none">
+      <span class="small">住信SBIネット銀行・楽天銀行・マネーフォワード(ME / クラウド)の明細CSVに対応。入金だけを拾い、確認してから月ごとに合計します。</span>
+    </div>
+    <div id="sales-review" style="display:none"></div>
+    <div id="sales-msg"></div>
+    <details id="sales-log-wrap" style="display:none; margin-top:8px">
+      <summary class="small" style="cursor:pointer">取り込んだ入金明細(売上帳の控え)</summary>
+      <div class="tbl-wrap"><table class="tbl" id="sales-log"></table></div>
+      <div class="toolbar"><button class="btn-sm danger" id="sales-log-clear">取り込み履歴を消去(月別売上は変えない)</button></div>
+    </details>
     <div class="grid-2" style="margin-top:14px">
       <div class="field">
         <label for="bankMemo">売上入金口座(メモ)</label>
@@ -443,6 +455,7 @@
       extra: { medical: '', medicalComp: '', furusato: '', other: '' },
       teigaku: '30000',
       sales: ['', '', '', '', '', '', '', '', '', '', '', ''],
+      salesLog: [],
       otherIncome: '',
       bankMemo: '',
       expBankMemo: '',
@@ -852,7 +865,7 @@
       ['books', '帳簿(仕訳帳・総勘定元帳 または 現金出納帳・経費帳)を1年分つけた'],
       ['receipts', '領収書・レシート・請求書の控えを月別に保存した(7年保存)'],
       ['invoice', '売上の根拠(請求書・振込履歴・業務委託契約書)を揃えた'],
-      ['bank', '売上の入金を専用口座に集約し、通帳の入金額と月別売上が一致することを確認した' + (state.bankMemo ? `(${esc(state.bankMemo)})` : '')],
+      ['bank', '売上の入金を専用口座に集約し、口座の入金額と月別売上が一致することを確認した(「売上口座の明細CSVを読み込む」で突き合わせ可)' + (state.bankMemo ? `(${esc(state.bankMemo)})` : '')],
       ['ratio', '家事按分の根拠(面積・時間・使用日数)をメモした'],
       ['gensen', '源泉徴収票(原本の提出は不要だが数字の転記に必要)を手元に用意した'],
       ['mynumber', 'マイナンバーカード + スマホ(またはICカードリーダー)で e-Tax の準備をした'],
@@ -905,30 +918,107 @@
     try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { /* not utf-8 */ }
     try { return new TextDecoder('shift_jis').decode(buf); } catch (e) { return new TextDecoder().decode(buf); }
   }
-  // 銀行・カード明細CSVか判定し、出金行を経費行に変換
-  function bankRowsToExpenses(rows) {
+  // マネーフォワードの大項目/中項目 → 決算書科目
+  const MF_CAT = [
+    [/通信/, '通信費'], [/交通|自動車|ガソリン|駐車|高速/, '旅費交通費'], [/水道|光熱|電気|ガス/, '水道光熱費'],
+    [/住まい|家賃|住宅/, '地代家賃'], [/書籍|新聞|教育|教養/, '新聞図書費'], [/交際|飲み会/, '接待交際費'],
+    [/保険/, '損害保険料'], [/税金|社会保障/, '租税公課'], [/手数料/, '支払手数料'], [/日用品|消耗|家電|パソコン|文具/, '消耗品費'],
+    [/広告|宣伝/, '広告宣伝費'], [/配送|郵便|宅配/, '荷造運賃'],
+  ];
+  function guessMfCat(cat) { const c = String(cat || ''); for (const r of MF_CAT) if (r[0].test(c)) return r[1]; return ''; }
+
+  // 銀行・カード・マネーフォワードの明細CSVを判定し、{side:'in'|'out', date, amount, memo, inst, mfCat} の配列に正規化
+  function parseBankRows(rows) {
     const header = rows[0].map(h => String(h).trim());
     const find = re => header.findIndex(h => re.test(h));
     const iDate = find(/日付|取引日|利用日|年月日|^日$/);
-    const iOut = find(/^出金|お引出|引落|支払金額|利用金額|ご利用金額/);
-    const iInOut = find(/入出金/);
-    const iIn = find(/^入金|お預入/);
     const iMemo = find(/内容|摘要|備考|利用店名|ご利用先|加盟店|名称/);
-    if (iDate < 0 || (iOut < 0 && iInOut < 0) || iMemo < 0) return null;
+    if (iDate < 0 || iMemo < 0) return null;
+    const iMfAmt = find(/^金額/), iCalc = find(/計算対象/), iTransfer = find(/^振替/), iInst = find(/保有金融機関|金融機関/);
+    const iCat1 = find(/大項目/), iCat2 = find(/中項目/);
+    const iOut = find(/^出金|お引出|引落|支払金額|利用金額|ご利用金額/);
+    const iIn = find(/^入金|お預入/);
+    const iInOut = find(/入出金/);
+    const isMF = iMfAmt >= 0 && (iCalc >= 0 || iInst >= 0 || iCat1 >= 0);
+    if (!isMF && iOut < 0 && iIn < 0 && iInOut < 0) return null;
     const out = [];
     rows.slice(1).forEach(r => {
-      let amt = 0;
-      if (iOut >= 0 && num(r[iOut]) !== 0) amt = Math.abs(num(r[iOut]));
-      else if (iInOut >= 0) { const v = num(r[iInOut]); if (v < 0) amt = -v; }
-      if (iIn >= 0 && num(r[iIn]) > 0 && !amt) return; // 入金行
-      if (!amt) return;
-      const memo = String(r[iMemo] || '').trim();
-      const cat = guessCat(memo);
+      let side = null, amt = 0;
+      if (isMF) {
+        if (iCalc >= 0 && String(r[iCalc]).trim() !== '' && num(r[iCalc]) === 0) return; // 計算対象外
+        if (iTransfer >= 0 && num(r[iTransfer]) === 1) return; // 口座間の振替
+        const v = num(r[iMfAmt]); if (!v) return;
+        side = v < 0 ? 'out' : 'in'; amt = Math.abs(v);
+      } else {
+        if (iOut >= 0 && num(r[iOut]) !== 0) { side = 'out'; amt = Math.abs(num(r[iOut])); }
+        else if (iIn >= 0 && num(r[iIn]) !== 0) { side = 'in'; amt = Math.abs(num(r[iIn])); }
+        else if (iInOut >= 0) { const v = num(r[iInOut]); if (!v) return; side = v < 0 ? 'out' : 'in'; amt = Math.abs(v); }
+        if (!amt) return;
+      }
       let date = String(r[iDate] || '').trim();
       if (/^\d{8}$/.test(date)) date = date.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1/$2/$3');
-      out.push({ date, cat: cat || '雑費', memo: (cat ? '' : '【要確認】') + memo, amount: String(amt), ratio: 100 });
+      out.push({
+        side, date, amount: amt,
+        memo: String(r[iMemo] || '').trim(),
+        inst: iInst >= 0 ? String(r[iInst] || '').trim() : '',
+        mfCat: isMF ? [r[iCat1], r[iCat2]].filter(Boolean).map(x => String(x).trim()).join('/') : '',
+      });
     });
     return out;
+  }
+  function bankRowsToExpenses(rows) {
+    const entries = parseBankRows(rows);
+    if (!entries) return null;
+    return entries.filter(e => e.side === 'out').map(e => {
+      const cat = guessCat(e.memo) || guessMfCat(e.mfCat);
+      const extra = [e.inst, e.mfCat].filter(Boolean).join(' / ');
+      return { date: e.date, cat: cat || '雑費', memo: (cat ? '' : '【要確認】') + e.memo + (extra ? `(${extra})` : ''), amount: String(e.amount), ratio: 100 };
+    });
+  }
+  // 売上口座の入金 → 月別売上(確認用の一覧を出してから適用)
+  const OWN_MOVE = /振替|振込 ?自分|本人|定期|積立|利息|配当|給与|給料|賞与|ボーナス|カードローン|借入|ATM|還付|キャッシュバック|ポイント/;
+  let pendingSales = [];
+  function monthOf(date) { const m = String(date).match(/^(\d{4})[\/\-.年](\d{1,2})/); return m ? { y: +m[1], m: +m[2] } : null; }
+  function renderSalesLog() {
+    const wrap = $('#sales-log-wrap'); const log = state.salesLog || [];
+    wrap.style.display = log.length ? '' : 'none';
+    if (!log.length) return;
+    const total = log.reduce((a, e) => a + num(e.amount), 0);
+    $('#sales-log').innerHTML = '<tr><th>日付</th><th>内容</th><th class="num">金額</th></tr>' +
+      log.map(e => `<tr><td>${esc(e.date)}</td><td>${esc(e.memo)}</td><td class="num">${fmt(num(e.amount))}</td></tr>`).join('') +
+      `<tr class="total"><td colspan="2">合計 ${log.length} 件</td><td class="num">${fmt(total)}</td></tr>`;
+  }
+  function renderSalesReview() {
+    const box = $('#sales-review');
+    if (!pendingSales.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = '';
+    const selTotal = pendingSales.filter(e => e.checked).reduce((a, e) => a + e.amount, 0);
+    const other = pendingSales.filter(e => e.checked && (!monthOf(e.date) || monthOf(e.date).y !== +state.year)).length;
+    box.innerHTML = `<div class="callout info">
+      <strong>入金 ${pendingSales.length} 件を読み込みました。</strong>売上に含めるものにチェックしてください。給与・自分の口座間の移動・利息・還付などは外します(キーワードで自動的に外したものは要確認)。
+      選択合計: <strong>${yen(selTotal)}</strong>${other ? ` <span class="badge warn">${YEARS[state.year].wareki}以外の日付が ${other} 件(集計から除外)</span>` : ''}
+      <div class="tbl-wrap" style="margin-top:8px; max-height:320px; overflow:auto"><table class="tbl"><thead><tr><th></th><th>日付</th><th>内容</th><th class="num">金額</th></tr></thead><tbody>
+      ${pendingSales.map((e, i) => `<tr><td><input type="checkbox" data-sel="${i}" ${e.checked ? 'checked' : ''}></td><td>${esc(e.date)}</td><td>${esc(e.memo)}${e.inst ? `<span class="small">(${esc(e.inst)})</span>` : ''}</td><td class="num">${fmt(e.amount)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="toolbar">
+        <button class="btn-sm" id="sales-apply-add">選択分を月別売上に加算</button>
+        <button class="btn-sm" id="sales-apply-replace">選択分で月別売上を置き換え</button>
+        <button class="btn-sm danger" id="sales-cancel">取り消し</button>
+      </div></div>`;
+    $$('[data-sel]', box).forEach(cb => cb.addEventListener('change', () => { pendingSales[+cb.dataset.sel].checked = cb.checked; renderSalesReview(); }));
+    const apply = replace => {
+      const sel = pendingSales.filter(e => e.checked);
+      const byMonth = new Array(12).fill(0); let skipped = 0; const applied = [];
+      sel.forEach(e => { const d = monthOf(e.date); if (!d || d.y !== +state.year) { skipped++; return; } byMonth[d.m - 1] += e.amount; applied.push({ date: e.date, memo: e.memo, amount: String(e.amount) }); });
+      if (replace) { state.sales = state.sales.map(() => ''); state.salesLog = []; }
+      byMonth.forEach((v, i) => { if (v) state.sales[i] = String(num(state.sales[i]) + v); });
+      state.salesLog = (state.salesLog || []).concat(applied);
+      pendingSales = []; save(); renderMonths(); renderSalesReview(); renderSalesLog(); render();
+      $('#sales-msg').innerHTML = `<div class="callout ok">${applied.length} 件、${yen(applied.reduce((a, e) => a + num(e.amount), 0))} を月別売上に${replace ? '反映(置き換え)' : '加算'}しました。${skipped ? `${YEARS[state.year].wareki}以外の ${skipped} 件は除外しました。` : ''}</div>`;
+    };
+    $('#sales-apply-add').addEventListener('click', () => apply(false));
+    $('#sales-apply-replace').addEventListener('click', () => apply(true));
+    $('#sales-cancel').addEventListener('click', () => { pendingSales = []; renderSalesReview(); });
   }
   function parseCSV(text) {
     const rows = []; let row = [], cur = '', inQ = false;
@@ -969,7 +1059,7 @@
         const rows = parseCSV(decodeCSV(reader.result));
         if (!rows.length) return;
         const names = CATS.map(c => c[0]);
-        const isOwn = /日付/.test(rows[0][0] || '') && /科目/.test(rows[0][1] || '');
+        const isOwn = /日付/.test(rows[0][0] || '') && /科目/.test(rows[0][1] || '') && /按分/.test(rows[0][4] || '');
         let imported;
         if (isOwn) {
           imported = rows.slice(1).map(r => ({
@@ -979,7 +1069,7 @@
           }));
         } else {
           imported = bankRowsToExpenses(rows);
-          if (!imported) { alert('CSVの形式を判定できませんでした。\n対応形式: このツールのCSV(日付,科目,内容,金額,按分%) または 銀行・カード明細CSV(日付・出金額・内容の列があるもの)'); return; }
+          if (!imported) { alert('CSVの形式を判定できませんでした。\n対応形式: このツールのCSV(日付,科目,内容,金額,按分%)、銀行・カード明細CSV(日付・出金額・内容の列があるもの)、マネーフォワードの明細CSV'); return; }
           if (!imported.length) { alert('出金(経費候補)の行が見つかりませんでした。'); return; }
           const unknown = imported.filter(e => e.memo.startsWith('【要確認】')).length;
           alert(`銀行・カード明細として ${imported.length} 件の出金を取り込みます。\n科目を推定できなかった ${unknown} 件は「雑費」+【要確認】にしています。\n\n取り込み後、私用の支出は × で削除(または按分0%)し、兼用のものは按分%を調整してください。`);
@@ -992,6 +1082,23 @@
       reader.readAsArrayBuffer(file);
       ev.target.value = '';
     });
+    renderSalesLog();
+    $('#sales-csv').addEventListener('change', ev => {
+      const file = ev.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const rows = parseCSV(decodeCSV(reader.result));
+        const entries = rows.length ? parseBankRows(rows) : null;
+        if (!entries) { $('#sales-msg').innerHTML = '<div class="callout danger">CSVの形式を判定できませんでした。銀行の入出金明細CSV、またはマネーフォワードの明細CSVを選んでください。</div>'; return; }
+        pendingSales = entries.filter(e => e.side === 'in').map(e => Object.assign({ checked: !OWN_MOVE.test(e.memo.normalize('NFKC')) }, e));
+        $('#sales-msg').innerHTML = pendingSales.length ? '' : '<div class="callout warn">入金の行が見つかりませんでした。</div>';
+        renderSalesReview();
+        $('#sales-review').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      reader.readAsArrayBuffer(file);
+      ev.target.value = '';
+    });
+    $('#sales-log-clear').addEventListener('click', () => { state.salesLog = []; save(); renderSalesLog(); });
     $('#bulk-cat').innerHTML = CATS.map(c => `<option value="${c[0]}">${c[0]}</option>`).join('');
     $('#bulk-apply').addEventListener('click', () => {
       const cat = $('#bulk-cat').value, r = Math.min(100, Math.max(0, num($('#bulk-ratio').value)));
